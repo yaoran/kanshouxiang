@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import wxPay, { WECHAT_NOTIFY_URL } from '@/lib/wechat-pay';
+import { createNativeOrder, isWechatPayConfigured, WECHAT_NOTIFY_URL } from '@/lib/wechat-pay';
 
 export async function POST(req: Request) {
   try {
@@ -61,39 +61,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Order creation failed' }, { status: 500 });
     }
 
-    if (!wxPay) {
-       // Development Mock if Wechat Pay is not configured
-       if (process.env.NODE_ENV === 'development') {
-           return NextResponse.json({ 
-               code_url: 'https://example.com/mock_qr_code', 
-               mock_order_id: order.id,
-               message: 'Mock Mode: Wechat Pay not configured' 
-           });
-       }
-       return NextResponse.json({ error: 'Payment service unavailable' }, { status: 503 });
+    // 4. Check if WeChat Pay is configured
+    if (!isWechatPayConfigured()) {
+      // Development Mock if Wechat Pay is not configured
+      if (process.env.NODE_ENV === 'development') {
+        return NextResponse.json({ 
+          code_url: 'https://example.com/mock_qr_code', 
+          mock_order_id: order.id,
+          message: 'Mock Mode: Wechat Pay not configured' 
+        });
+      }
+      return NextResponse.json({ error: 'Payment service unavailable' }, { status: 503 });
     }
 
-    // 4. Call WeChat Native Pay
-    const params = {
+    // 5. Call WeChat Native Pay
+    const result = await createNativeOrder({
       description: `手相分析 - ${pkg.name}`,
-      out_trade_no: outTradeNo,
-      notify_url: WECHAT_NOTIFY_URL,
-      amount: {
-        total: Math.round(pkg.price * 100), // 分
-        currency: 'CNY',
-      },
-      scene_info: {
-        payer_client_ip: '127.0.0.1', // Should get real IP
-      },
-    };
-
-    const result = await wxPay.transactions_native(params);
+      outTradeNo,
+      totalAmount: Math.round(pkg.price * 100), // 转为分
+      notifyUrl: WECHAT_NOTIFY_URL,
+    });
     
     if (result.code_url) {
       return NextResponse.json({ code_url: result.code_url, out_trade_no: outTradeNo });
     } else {
-      console.error('WeChat Pay Error:', result);
-      return NextResponse.json({ error: 'Payment initialization failed' }, { status: 500 });
+      console.error('WeChat Pay Error:', result.error);
+      return NextResponse.json({ error: result.error || 'Payment initialization failed' }, { status: 500 });
     }
 
   } catch (error: any) {
@@ -101,5 +94,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message || 'Internal Error' }, { status: 500 });
   }
 }
-
-

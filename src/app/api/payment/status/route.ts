@@ -11,12 +11,16 @@ export async function GET(req: Request) {
   }
 
   const supabase = await createClient();
-  let query = supabase.from('orders').select('status').single();
   
-  if (orderId) query = query.eq('id', orderId);
-  else if (outTradeNo) query = query.eq('out_trade_no', outTradeNo);
+  let query = supabase.from('orders').select('status');
+  
+  if (orderId) {
+    query = query.eq('id', orderId);
+  } else if (outTradeNo) {
+    query = query.eq('out_trade_no', outTradeNo);
+  }
 
-  const { data, error } = await query;
+  const { data, error } = await query.single();
 
   if (error) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 });
@@ -24,5 +28,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ status: data.status });
 }
-
-
